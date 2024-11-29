@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <unistd.h>
 
 #define MAX_INPUT 1024
 #define MAX_ARGS 10
@@ -159,6 +161,7 @@ void execute_background(char **args) {
         exit(1);
     } else if (pid > 0) {
         // Proceso padre
+        static int job_counter = 0;
         printf("[%d] %d\n", ++job_counter, pid); // Mostrar el job ID y PID
         bg_process *new_bg = malloc(sizeof(bg_process));
         new_bg->pid = pid;
