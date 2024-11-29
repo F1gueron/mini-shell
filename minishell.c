@@ -99,6 +99,98 @@ void process_command(char *input) {
         printf("Unrecognized command: %s\n", args[0]);  // Not implemented yet
     }
 }
+typedef struct bg_process {
+    pid_t pid;          // ID del proceso
+    char *command;      // Comando ejecutado
+    struct bg_process *next; // Siguiente proceso en la lista
+} bg_process;
+
+bg_process *bg_list = NULL; // Inicializa lista de procesos en segundo plano
+
+void bg_command(int job_id) {
+    bg_process *current = bg_list;
+    int i = 1;
+    while (current) {
+        if (i == job_id) { // Encontrar el proceso correspondiente
+            kill(current->pid, SIGCONT); // Reanudar el proceso
+            printf("[%d] %d continued\n", job_id, current->pid);
+            return;
+        }
+        current = current->next;
+        i++;
+    }
+    printf("bg: no such job\n");
+}
+//Foreground 
+void fg_command(int job_id) {
+    bg_process *current = bg_list, *prev = NULL;
+    int i = 1;
+
+    while (current) {
+        if (i == job_id) { // Encontrar el proceso correspondiente
+            // Sacar el proceso de la lista de procesos en segundo plano
+            if (prev)
+                prev->next = current->next;
+            else
+                bg_list = current->next;
+
+            // Llevar el proceso al primer plano
+            printf("Bringing [%d] %d to foreground\n", job_id, current->pid);
+            kill(current->pid, SIGCONT); // Reanudar si estaba pausado
+            int status;
+            waitpid(current->pid, &status, 0); // Esperar al proceso
+            free(current->command);
+            free(current);
+            return;
+        }
+        prev = current;
+        current = current->next;
+        i++;
+    }
+    printf("fg: no such job\n");
+}
+void execute_background(char **args) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Proceso hijo
+        setpgid(0, 0); // Crear un nuevo grupo de procesos
+        execvp(args[0], args);
+        perror("execvp failed");
+        exit(1);
+    } else if (pid > 0) {
+        // Proceso padre
+        printf("[%d] %d\n", ++job_counter, pid); // Mostrar el job ID y PID
+        bg_process *new_bg = malloc(sizeof(bg_process));
+        new_bg->pid = pid;
+        new_bg->command = strdup(args[0]); // Guardar el comando
+        new_bg->next = bg_list;
+        bg_list = new_bg;
+    } else {
+        perror("fork failed");
+    }
+}
+
+void sigchld_handler(int sig) {
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        // Eliminar el proceso terminado de la lista
+        bg_process *current = bg_list, *prev = NULL;
+        while (current) {
+            if (current->pid == pid) {
+                if (prev)
+                    prev->next = current->next;
+                else
+                    bg_list = current->next;
+                free(current->command);
+                free(current);
+                break;
+            }
+            prev = current;
+            current = current->next;
+        }
+    }
+}
 
 int main() {
     char input[MAX_INPUT];
