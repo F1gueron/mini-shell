@@ -4,103 +4,97 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <fcntl.h>
+#include <errno.h>
+#include "parser.h" 
 #include <signal.h>
-#include <unistd.h>
 
-#define MAX_INPUT 1024
-#define MAX_ARGS 10
+# define MAX_INPUT 102
 
-// Color definitions
 #define RESET      "\033[0m"
 #define RED        "\033[31m"
 #define GREEN      "\033[32m"
 #define YELLOW     "\033[33m"
 #define BLUE       "\033[34m"
-#define MAGENTA    "\033[35m"
-#define CYAN       "\033[36m"
-#define WHITE      "\033[37m"
-
 
 void cd(char *path) {
-    if (path == NULL || strcmp(path, "~") == 0) {  // HOME
-        path = getenv("HOME");
+    char resolved_path[1024];
+
+    if (path == NULL || strcmp(path, "~") == 0) { 
+        path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
+    } else if (path[0] == '~') { 
+        // Cuando la dirección es "~/*"
+        const char *home = getenv("HOME");
+        strcpy(resolved_path, home);   
+        strcat(resolved_path, path + 1); 
+        path = resolved_path;
     }
 
-    if (chdir(path) != 0) {  // cd path
-        perror("cd");        // Error
-    }
-}
-
-void ls(char **args) {
-    pid_t pid = fork();  
-    if (pid == 0) {     // Correct child -> execute ls
-        execvp("ls", args);
-        perror("execvp");  // Print error if `ls` fails
-        exit(EXIT_FAILURE);
-    } else if (pid > 0) {   // Waiting for ls
-        wait(NULL);
-    } else {
-        perror("fork");  // Print error if fork fails
+    if (chdir(path) != 0) { 
+        perror("cd"); // Error al cambiar de directorio
     }
 }
 
-void cat(char **args) {
-    pid_t pid = fork();  
-    if (pid == 0) {     // Correct child -> execute cat
-        execvp("cat", args);
-        perror("execvp");  // Print error if `cat` fails
-        exit(EXIT_FAILURE);
-    } else if (pid > 0) {   // Waiting for cat
-        wait(NULL);
+void execute_command(tline *line) {
+    if (line == NULL || line->ncommands == 0) {
+        return; // No hay comandos
+    }
+
+    tcommand comandos = line->commands[0]; 
+    if (strcmp(comandos.argv[0], "cd") == 0) {
+        cd(comandos.argv[1]); // Implementación propia para `cd`
     } else {
-        perror("fork");  // Print error if fork fails
+        pid_t pid = fork();
+        if (pid == 0) { // Proceso hijo
+            execvp(comandos.argv[0], comandos.argv); // Buscar en el PATH
+            fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comandos.argv[0], strerror(errno));
+            exit(EXIT_FAILURE); 
+        } else if (pid > 0) { // Proceso padre
+            if (!line->background) { // Esperar si no está en segundo plano
+                waitpid(pid, NULL, 0);
+            }
+        } else {
+            perror("fork"); // Error al crear el proceso
+        }
     }
 }
 
 void display_prompt() {
-    char cwd[1024];  
-    char *user = getenv("USER");  
+    char cwd[1024];
+    char *user = getenv("USER");
 
     if (user == NULL) {
-        user = "Anonymous";  
+        user = "Anonymous";
     }
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        // Display the prompt with directory in it
-        printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ",user, cwd);
+        printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
     } else {
-        perror("getcwd"); //cwd failed
+        perror("getcwd");
         exit(EXIT_FAILURE);
     }
 }
 
-void process_command(char *input) {
-    char *args[MAX_ARGS];
-    char *token = strtok(input, " \n");
-    int i = 0;
+int main() {
+    char input[MAX_INPUT];
+    tline *line;
 
-    // Split the input into arguments
-    while (token != NULL && i < MAX_ARGS - 1) {
-        args[i++] = token;
-        token = strtok(NULL, " \n");
-    }
-    args[i] = NULL;
+    while (1) {
+        display_prompt();
+        if (fgets(input, sizeof(input), stdin) == NULL) {
+            break; // EOF
+        }
 
-    if (args[0] == NULL) {
-        return; 
+        line = tokenize(input); // Tokenizar la entrada usando librería del profe
+        if (line == NULL) {
+            fprintf(stderr, RED "Error: no se pudo procesar el comando.\n" RESET);
+            continue;
+        }
+
+        execute_command(line); // Procesar y ejecutar el comando
     }
 
-    // Command match
-    if (strcmp(args[0], "cd") == 0) {
-        cd(args[1]);  // Implement this
-    } else if (strcmp(args[0], "ls") == 0) {
-        ls(args);     // Call /bin/ls          
-    } else if (strcmp(args[0], "cat") == 0) {
-        cat(args);    // Call /bin/cat
-    } else {
-        printf("Unrecognized command: %s\n", args[0]);  // Not implemented yet
-    }
+    return 0;
 }
+
 typedef struct bg_process {
     pid_t pid;          // ID del proceso
     char *command;      // Comando ejecutado
@@ -193,21 +187,4 @@ void sigchld_handler(int sig) {
             current = current->next;
         }
     }
-}
-
-int main() {
-    char input[MAX_INPUT];
-
-    while (1) {
-        display_prompt();
-
-        if (fgets(input, sizeof(input), stdin) == NULL) {
-            break;  // Exit if EOF is received
-        }
-
-        // Process the command
-        process_command(input);
-    }
-
-    return 0;
 }
