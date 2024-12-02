@@ -2,19 +2,48 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
-#include "parser.h" 
-#include <signal.h>
+#include "parser.h"
 
-# define MAX_INPUT 102
+
+
+# define MAX_INPUT 1024
 
 #define RESET      "\033[0m"
 #define RED        "\033[31m"
 #define GREEN      "\033[32m"
 #define YELLOW     "\033[33m"
 #define BLUE       "\033[34m"
+
+void handle_signal(int sig) {
+    if (sig == SIGINT) {
+        printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
+        // TODO
+    } else if (sig == SIGQUIT) {
+        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.\n" RESET);
+        // TODO
+    }
+}
+
+void setup_signal_handlers() {
+    struct sigaction sa;
+    sa.sa_handler = handle_signal;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("sigaction(SIGINT)");
+        exit(EXIT_FAILURE);
+    }
+    if (sigaction(SIGQUIT, &sa, NULL) == -1) {
+        perror("sigaction(SIGQUIT)");
+        exit(EXIT_FAILURE);
+    }
+}
+
 
 void cd(char *path) {
     char resolved_path[1024];
@@ -76,11 +105,18 @@ void display_prompt() {
 int main() {
     char input[MAX_INPUT];
     tline *line;
+    setup_signal_handlers();
 
     while (1) {
         display_prompt();
         if (fgets(input, sizeof(input), stdin) == NULL) {
             break; // EOF
+        }
+
+        if (strcmp(input, "quit\n") == 0 || strcmp(input, "exit\n") == 0 ||
+            strcmp(input, "quit()\n") == 0 || strcmp(input, "exit()\n") == 0) {
+            printf(GREEN "Exiting shell. Goodbye!\n" RESET );
+            return 0;
         }
 
         line = tokenize(input); // Tokenizar la entrada usando librería del profe
