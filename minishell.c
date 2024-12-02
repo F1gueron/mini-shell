@@ -28,23 +28,6 @@ void handle_signal(int sig) {
     }
 }
 
-void setup_signal_handlers() {
-    struct sigaction sa;
-    sa.sa_handler = handle_signal;
-    sa.sa_flags = SA_RESTART;
-    sigemptyset(&sa.sa_mask);
-
-    if (sigaction(SIGINT, &sa, NULL) == -1) {
-        perror("sigaction(SIGINT)");
-        exit(EXIT_FAILURE);
-    }
-    if (sigaction(SIGQUIT, &sa, NULL) == -1) {
-        perror("sigaction(SIGQUIT)");
-        exit(EXIT_FAILURE);
-    }
-}
-
-
 void cd(char *path) {
     char resolved_path[1024];
 
@@ -105,7 +88,8 @@ void display_prompt() {
 int main() {
     char input[MAX_INPUT];
     tline *line;
-    setup_signal_handlers();
+    signal(SIGINT, handle_signal);
+    signal(SIGQUIT, handle_signal);
 
     while (1) {
         display_prompt();
