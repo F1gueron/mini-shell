@@ -29,15 +29,15 @@ This project is a custom command-line mini shell developed in C, created as part
 Start the shell and use it just like a traditional Unix shell. It supports common commands, process management, and I/O redirection. Here are a few examples:
 - **Run a command:**
   ```bash
-  msh> ls -l
+  figueron@msh:/home/figueron/Desktop$> ls -l
   ```
 - **Redirect output:**
   ```bash
-  msh> echo "Hello, world!" > output.txt
+  figueron@msh:/home/figueron/Desktop$ echo "Hello, world!" > output.txt
   ```
 - **Background process:**
   ```bash
-  msh> find / name "file.txt" &
+  figueron@msh:/home/figueron/Desktop$> find / name "file.txt" &
   ```
 ## Learning Objectives
 This project aims to:
