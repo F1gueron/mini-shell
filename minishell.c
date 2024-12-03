@@ -23,13 +23,14 @@ void handle_signal(int sig) {
         printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
         // TODO
     } else if (sig == SIGQUIT) {
-        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.\n" RESET);
+        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.
         // TODO
     }
 }
 
 void cd(char *path) {
     char resolved_path[1024];
+    printf("cd %s\n", path);
 
     if (path == NULL || strcmp(path, "~") == 0) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
@@ -46,27 +47,66 @@ void cd(char *path) {
     }
 }
 
-void execute_command(tline *line) {
-    if (line == NULL || line->ncommands == 0) {
-        return; // No hay comandos
+void execute_command(tcommand *comando, int fd_in, int fd_out) {
+    printf("Comando: %s\n", comando->argv[0]);
+    if (fd_in != 0) { // Entra cuando usamos pipes y >
+        dup2(fd_in, 0);
+        close(fd_in);
+    }
+    if (fd_out != 1) { // Entra cuando usamos pipes y <
+        dup2(fd_out, 1);
+        close(fd_out);
+    }
+    execvp(comando->argv[0], comando->argv); // Buscar en el PATH
+    fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comando->argv[0], strerror(errno));
+}
+
+void execute_piped_commands(tline *line) {
+    int i;
+    int pipefd[2];
+    int fd_in = 0;
+
+    for (i = 0; i < line->ncommands; i++) {
+        if (pipe(pipefd) == -1) {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
+
+        // Ningún built-in tiene que hacer fork
+        // Como un hijo no puede cambiar el directorio de trabajo de un padre, se maneja el comando `cd` aquí
+        if (strcmp(line->commands[i].argv[0], "cd") == 0) {
+            cd(line->commands[i].argv[1]);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            continue;
+        }
+
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("fork");
+        }
+
+        if (pid == 0) { // Proceso hijo
+            if (fd_in != 0) {
+                dup2(fd_in, 0); 
+                close(fd_in);
+            }
+            if (i < line->ncommands - 1) {
+                dup2(pipefd[1], 1);
+            }
+            close(pipefd[0]); // Se cierra pipe de lectura
+            close(pipefd[1]); // Se cierra pipe de escritura
+            execute_command(&line->commands[i], fd_in, pipefd[1]);
+            
+        } else { // Proceso padre
+            close(pipefd[1]); // Se cierra pipe de escritura
+            fd_in = pipefd[0]; // Se guarda el pipe de lectura
+            close(pipefd[0]); // Se cierra pipe de lectura
+        }
     }
 
-    tcommand comandos = line->commands[0]; 
-    if (strcmp(comandos.argv[0], "cd") == 0) {
-        cd(comandos.argv[1]); // Implementación propia para `cd`
-    } else {
-        pid_t pid = fork();
-        if (pid == 0) { // Proceso hijo
-            execvp(comandos.argv[0], comandos.argv); // Buscar en el PATH
-            fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comandos.argv[0], strerror(errno));
-            exit(EXIT_FAILURE); 
-        } else if (pid > 0) { // Proceso padre
-            if (!line->background) { // Esperar si no está en segundo plano
-                waitpid(pid, NULL, 0);
-            }
-        } else {
-            perror("fork"); // Error al crear el proceso
-        }
+    for (i = 0; i < line->ncommands; i++) {
+        wait(NULL); 
     }
 }
 
@@ -109,7 +149,8 @@ int main() {
             continue;
         }
 
-        execute_command(line); // Procesar y ejecutar el comando
+        printf("%d comando(s)\n", line->ncommands);
+        execute_piped_commands(line);
     }
 
     return 0;
