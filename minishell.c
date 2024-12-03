@@ -102,10 +102,10 @@ void execute_piped_commands(tline *line) {
                     }
             }
             if (i < line->ncommands - 1) {
-                dup2(fd_out, 1);
-                close(fd_out);
+                dup2(pipefd[1], 1);
+                close(pipefd[1]);
             } else {
-                if (line->redirect_output != NULL){
+                if (line->redirect_output != NULL) {
                     fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                     if (fd_out == -1) {
                         perror("open");
@@ -113,6 +113,15 @@ void execute_piped_commands(tline *line) {
                     }
                     dup2(fd_out, STDOUT_FILENO);
                     close(fd_out);
+                }
+                if (line->redirect_error != NULL) {
+                    int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (fd_err == -1) {
+                        perror("open");
+                        exit(EXIT_FAILURE);
+                    }
+                    dup2(fd_err, STDERR_FILENO);
+                    close(fd_err);
                 }
             }
             close(pipefd[0]); // Se cierra pipe de lectura
