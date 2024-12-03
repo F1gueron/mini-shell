@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include "parser.h"
+#include <fcntl.h>
 
 
 
@@ -30,7 +31,6 @@ void handle_signal(int sig) {
 
 void cd(char *path) {
     char resolved_path[1024];
-    printf("cd %s\n", path);
 
     if (path == NULL || strcmp(path, "~") == 0) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
@@ -48,7 +48,6 @@ void cd(char *path) {
 }
 
 void execute_command(tcommand *comando, int fd_in, int fd_out) {
-    printf("Comando: %s\n", comando->argv[0]);
     if (fd_in != 0) { // Entra cuando usamos pipes y >
         dup2(fd_in, 0);
         close(fd_in);
@@ -65,6 +64,7 @@ void execute_piped_commands(tline *line) {
     int i;
     int pipefd[2];
     int fd_in = 0;
+    int fd_out = 1;
 
     for (i = 0; i < line->ncommands; i++) {
         if (pipe(pipefd) == -1) {
@@ -90,13 +90,34 @@ void execute_piped_commands(tline *line) {
             if (fd_in != 0) {
                 dup2(fd_in, 0); 
                 close(fd_in);
+            }else{
+                if (line->redirect_input != NULL){
+                    int fd_in = open(line->redirect_input, O_RDONLY);
+                    if (fd_in == -1) {
+                        perror("open");
+                        continue;
+                    }
+                    dup2(fd_in, STDIN_FILENO);
+                    close(fd_in);
+                    }
             }
             if (i < line->ncommands - 1) {
-                dup2(pipefd[1], 1);
+                dup2(fd_out, 1);
+                close(fd_out);
+            } else {
+                if (line->redirect_output != NULL){
+                    fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (fd_out == -1) {
+                        perror("open");
+                        exit(EXIT_FAILURE);
+                    }
+                    dup2(fd_out, STDOUT_FILENO);
+                    close(fd_out);
+                }
             }
             close(pipefd[0]); // Se cierra pipe de lectura
             close(pipefd[1]); // Se cierra pipe de escritura
-            execute_command(&line->commands[i], fd_in, pipefd[1]);
+            execute_command(&line->commands[i], fd_in, fd_out);
             
         } else { // Proceso padre
             close(pipefd[1]); // Se cierra pipe de escritura
@@ -149,7 +170,6 @@ int main() {
             continue;
         }
 
-        printf("%d comando(s)\n", line->ncommands);
         execute_piped_commands(line);
     }
 
