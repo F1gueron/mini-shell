@@ -125,13 +125,12 @@ void execute_piped_commands(tline *line) {
                 }
             }
             close(pipefd[0]); // Se cierra pipe de lectura
-            close(pipefd[1]); // Se cierra pipe de escritura
             execute_command(&line->commands[i], fd_in, fd_out);
             
         } else { // Proceso padre
             close(pipefd[1]); // Se cierra pipe de escritura
             fd_in = pipefd[0]; // Se guarda el pipe de lectura
-            close(pipefd[0]); // Se cierra pipe de lectura
+
         }
     }
 
