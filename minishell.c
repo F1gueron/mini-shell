@@ -183,6 +183,13 @@ int main() {
 
     return 0;
 }
+typedef struct fg_process {
+    pid_t pid;          // ID del proceso
+    char *command;      // Comando ejecutado
+    struct bg_process *next; // Siguiente proceso en la lista
+} fg_process;
+
+bg_process *fg_list = NULL; // Inicializa lista de procesos en primer plano
 
 typedef struct bg_process {
     pid_t pid;          // ID del proceso
@@ -192,6 +199,64 @@ typedef struct bg_process {
 
 bg_process *bg_list = NULL; // Inicializa lista de procesos en segundo plano
 
+void addFgProcess(fg_process *lista, pid_t pid, const char *comando){
+    fg_process *nuevo=malloc(1*sizeof(fg_process));
+    if (!nuevo) {
+        perror("Error al asignar memoria");
+        return;
+    }
+    nuevo->pid = pid;
+    nuevo->command = strdup(comando);
+    nuevo->next = lista;
+    *lista = *nuevo;
+}
+void eliminar_Bg_process(bg_process **lista, pid_t pid) {
+    bg_process *actual = *lista, *anterior = NULL;
+
+    while (actual != NULL) {
+        if (actual->pid == pid) {
+            if (anterior == NULL) {
+                *lista = actual->next;
+            } else {
+                anterior->next = actual->next;
+            }
+            free(actual->command);
+            free(actual);
+            return;
+        }
+        anterior = actual;
+        actual = actual->next;
+    }
+}
+void addFgProcess(fg_process *lista, pid_t pid, const char *comando){
+    fg_process *nuevo=malloc(1*sizeof(fg_process));
+    if (!nuevo) {
+        perror("Error al asignar memoria");
+        return;
+    }
+    nuevo->pid = pid;
+    nuevo->command = strdup(comando);
+    nuevo->next = lista;
+    *lista = *nuevo;
+}
+void eliminar_Bg_process(bg_process **lista, pid_t pid) {
+    bg_process *actual = *lista, *anterior = NULL;
+
+    while (actual != NULL) {
+        if (actual->pid == pid) {
+            if (anterior == NULL) {
+                *lista = actual->next;
+            } else {
+                anterior->next = actual->next;
+            }
+            free(actual->command);
+            free(actual);
+            return;
+        }
+        anterior = actual;
+        actual = actual->next;
+    }
+}
 void bg_command(int job_id) {
     bg_process *current = bg_list;
     int i = 1;
