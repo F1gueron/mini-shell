@@ -183,24 +183,18 @@ int main() {
 
     return 0;
 }
-typedef struct fg_process {
+typedef struct process {
     pid_t pid;          // ID del proceso
     char *command;      // Comando ejecutado
     struct bg_process *next; // Siguiente proceso en la lista
-} fg_process;
+} process;
 
-bg_process *fg_list = NULL; // Inicializa lista de procesos en primer plano
+process *fg_list = NULL; // Inicializa lista de procesos en primer plano
 
-typedef struct bg_process {
-    pid_t pid;          // ID del proceso
-    char *command;      // Comando ejecutado
-    struct bg_process *next; // Siguiente proceso en la lista
-} bg_process;
+process *bg_list = NULL; // Inicializa lista de procesos en segundo plano
 
-bg_process *bg_list = NULL; // Inicializa lista de procesos en segundo plano
-
-void addFgProcess(fg_process *lista, pid_t pid, const char *comando){
-    fg_process *nuevo=malloc(1*sizeof(fg_process));
+void addFgProcess(process *lista, pid_t pid, const char *comando){
+    process *nuevo=malloc(1*sizeof(process));
     if (!nuevo) {
         perror("Error al asignar memoria");
         return;
@@ -210,8 +204,8 @@ void addFgProcess(fg_process *lista, pid_t pid, const char *comando){
     nuevo->next = lista;
     *lista = *nuevo;
 }
-void eliminar_Bg_process(bg_process **lista, pid_t pid) {
-    bg_process *actual = *lista, *anterior = NULL;
+void eliminar_process(process **lista, pid_t pid) {
+    process *actual = *lista, *anterior = NULL;
 
     while (actual != NULL) {
         if (actual->pid == pid) {
@@ -228,19 +222,9 @@ void eliminar_Bg_process(bg_process **lista, pid_t pid) {
         actual = actual->next;
     }
 }
-void addFgProcess(fg_process *lista, pid_t pid, const char *comando){
-    fg_process *nuevo=malloc(1*sizeof(fg_process));
-    if (!nuevo) {
-        perror("Error al asignar memoria");
-        return;
-    }
-    nuevo->pid = pid;
-    nuevo->command = strdup(comando);
-    nuevo->next = lista;
-    *lista = *nuevo;
-}
-void eliminar_Bg_process(bg_process **lista, pid_t pid) {
-    bg_process *actual = *lista, *anterior = NULL;
+
+void eliminar_process(process **lista, pid_t pid) {
+    process *actual = *lista, *anterior = NULL;
 
     while (actual != NULL) {
         if (actual->pid == pid) {
@@ -257,88 +241,55 @@ void eliminar_Bg_process(bg_process **lista, pid_t pid) {
         actual = actual->next;
     }
 }
-void bg_command(int job_id) {
-    bg_process *current = bg_list;
-    int i = 1;
-    while (current) {
-        if (i == job_id) { // Encontrar el proceso correspondiente
-            kill(current->pid, SIGCONT); // Reanudar el proceso
-            printf("[%d] %d continued\n", job_id, current->pid);
-            return;
-        }
-        current = current->next;
-        i++;
-    }
-    printf("bg: no such job\n");
-}
-//Foreground 
-void fg_command(int job_id) {
-    bg_process *current = bg_list, *prev = NULL;
-    int i = 1;
-
-    while (current) {
-        if (i == job_id) { // Encontrar el proceso correspondiente
-            // Sacar el proceso de la lista de procesos en segundo plano
-            if (prev)
-                prev->next = current->next;
-            else
-                bg_list = current->next;
-
-            // Llevar el proceso al primer plano
-            printf("Bringing [%d] %d to foreground\n", job_id, current->pid);
-            kill(current->pid, SIGCONT); // Reanudar si estaba pausado
-            int status;
-            waitpid(current->pid, &status, 0); // Esperar al proceso
-            free(current->command);
-            free(current);
-            return;
-        }
-        prev = current;
-        current = current->next;
-        i++;
-    }
-    printf("fg: no such job\n");
-}
-void execute_background(char **args) {
+void execute_background(const char *command, char **args) {
     pid_t pid = fork();
-    if (pid == 0) {
+
+    if (pid < 0) {
+        perror("Error al crear el proceso");
+        return;
+    } else if (pid == 0) {
         // Proceso hijo
-        setpgid(0, 0); // Crear un nuevo grupo de procesos
-        execvp(args[0], args);
-        perror("execvp failed");
-        exit(1);
-    } else if (pid > 0) {
-        // Proceso padre
-        static int job_counter = 0;
-        printf("[%d] %d\n", ++job_counter, pid); // Mostrar el job ID y PID
-        bg_process *new_bg = malloc(sizeof(bg_process));
-        new_bg->pid = pid;
-        new_bg->command = strdup(args[0]); // Guardar el comando
-        new_bg->next = bg_list;
-        bg_list = new_bg;
+        if (execvp(args[0], args) == -1) {
+            perror("Error al ejecutar el comando");
+            exit(EXIT_FAILURE);
+        }
     } else {
-        perror("fork failed");
+        // Proceso padre: Agregar el proceso a la lista
+        printf("Ejecutando en background: %s (PID: %d)\n", command, pid);
+        addBgProcess(&bg_list, pid, command);
     }
 }
+// Ejecutar un comando en foreground
+void ejecutar_en_foreground(const char *command, char **args) {
+    pid_t pid = fork();
 
-void sigchld_handler(int sig) {
-    pid_t pid;
-    int status;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        // Eliminar el proceso terminado de la lista
-        bg_process *current = bg_list, *prev = NULL;
-        while (current) {
-            if (current->pid == pid) {
-                if (prev)
-                    prev->next = current->next;
-                else
-                    bg_list = current->next;
-                free(current->command);
-                free(current);
-                break;
-            }
-            prev = current;
-            current = current->next;
+    if (pid < 0) {
+        perror("Error al crear el proceso");
+        return;
+    } else if (pid == 0) {
+        // Proceso hijo
+        if (execvp(args[0], args) == -1) {
+            perror("Error al ejecutar el comando");
+            exit(EXIT_FAILURE);
         }
+    } else {
+        // Proceso padre: Agregar el proceso a la lista de foreground
+        agregar_proceso(&fg_list, pid, command);
+
+        // Esperar al proceso en foreground
+        int estado;
+        waitpid(pid, &estado, WUNTRACED);
+
+        // Analizar el estado del proceso
+        if (WIFEXITED(estado)) {
+            printf("Proceso en foreground (PID: %d) terminado con código %d\n", pid, WEXITSTATUS(estado));
+        } else if (WIFSIGNALED(estado)) {
+            printf("Proceso en foreground (PID: %d) terminado por señal %d\n", pid, WTERMSIG(estado));
+        } else if (WIFSTOPPED(estado)) {
+            printf("Proceso en foreground (PID: %d) detenido por señal %d\n", pid, WSTOPSIG(estado));
+        }
+
+        // Limpiar la lista de foreground
+        eliminar_proceso(&fg_list, pid);
     }
 }
