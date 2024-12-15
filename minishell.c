@@ -153,6 +153,18 @@ void display_prompt() {
         exit(EXIT_FAILURE);
     }
 }
+// Manejador para limpiar procesos terminados en background
+void manejador_sigchld(int sig) {
+    (void)sig; // Evitar advertencias sobre argumentos no usados
+    pid_t pid;
+    int estado;
+
+    // Limpiar todos los procesos terminados
+    while ((pid = waitpid(-1, &estado, WNOHANG)) > 0) {
+        printf("Proceso en background (PID: %d) terminado.\n", pid);
+        eliminar_proceso(&lista_bg, pid);
+    }
+}
 
 int main() {
     char input[MAX_INPUT];
@@ -176,6 +188,15 @@ int main() {
         if (line == NULL) {
             fprintf(stderr, RED "Error: no se pudo procesar el comando.\n" RESET);
             continue;
+        }
+        
+        // Ejecutar el primer comando en foreground o background
+        if (line->background) {
+            // Ejecutar en background
+            execute_background(line->commands[0].argv[0], line->commands[0].argv);
+        } else {
+            // Ejecutar en foreground
+            ejecutar_en_foreground(line->commands[0].argv[0], line->commands[0].argv);
         }
 
         execute_piped_commands(line);
