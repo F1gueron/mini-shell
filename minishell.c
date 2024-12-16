@@ -13,12 +13,6 @@
 
 # define MAX_INPUT 1024
 
-#define RESET      "\033[0m"
-#define RED        "\033[31m"
-#define GREEN      "\033[32m"
-#define YELLOW     "\033[33m"
-#define BLUE       "\033[34m"
-
 void handle_signal(int sig) {
     if (sig == SIGINT) {
         printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
@@ -57,7 +51,7 @@ void execute_command(tcommand *comando, int fd_in, int fd_out) {
         close(fd_out);
     }
     execvp(comando->argv[0], comando->argv); // Buscar en el PATH
-    fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comando->argv[0], strerror(errno));
+    fprintf(stderr, comando, ": No se encuentra el mandato\n" , comando->argv[0], strerror(errno));
 }
 
 void execute_piped_commands(tline *line) {
@@ -87,26 +81,26 @@ void execute_piped_commands(tline *line) {
         }
 
         if (pid == 0) { // Proceso hijo
-            if (fd_in != 0) {
-                dup2(fd_in, 0); 
+            if (fd_in != 0) { //No es el primer comando
+                dup2(fd_in, 0); // Redirigir la entrada estándar al pipe de lectura
                 close(fd_in);
             }else{
                 if (line->redirect_input != NULL){
                     int fd_in = open(line->redirect_input, O_RDONLY);
                     if (fd_in == -1) {
-                        perror("open");
+                        perror(line->redirect_input, "Error.", strerror(errno));
                         continue;
                     }
-                    dup2(fd_in, STDIN_FILENO);
+                    dup2(fd_in, STDIN_FILENO); // Redirigir la entrada estándar desde el archivo
                     close(fd_in);
                     }
             }
-            if (i < line->ncommands - 1) {
-                dup2(pipefd[1], 1);
+            if (i < line->ncommands - 1) { //No es el último comando
+                dup2(pipefd[1], 1);  // Redirigir la salida estándar al pipe de escritura
                 close(pipefd[1]);
             } else {
                 if (line->redirect_output != NULL) {
-                    fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644); // Redirigir la salida estándar al archivo
                     if (fd_out == -1) {
                         perror("open");
                         exit(EXIT_FAILURE);
@@ -115,7 +109,7 @@ void execute_piped_commands(tline *line) {
                     close(fd_out);
                 }
                 if (line->redirect_error != NULL) {
-                    int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644); // Redirigir la salida de error al archivo
                     if (fd_err == -1) {
                         perror("open");
                         exit(EXIT_FAILURE);
@@ -147,7 +141,8 @@ void display_prompt() {
         user = "Anonymous";
     }
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
+        printf("msh> ")
+        //printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
     } else {
         perror("getcwd");
         exit(EXIT_FAILURE);
