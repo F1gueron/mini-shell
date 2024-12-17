@@ -9,15 +9,8 @@
 #include "parser.h"
 #include <fcntl.h>
 
-
-
 # define MAX_INPUT 1024
 
-#define RESET      "\033[0m"
-#define RED        "\033[31m"
-#define GREEN      "\033[32m"
-#define YELLOW     "\033[33m"
-#define BLUE       "\033[34m"
 
 typedef struct process {
     pid_t pid;          // ID del proceso
@@ -81,18 +74,16 @@ void execute_background(const char *command, char **args) {
 
 void handle_signal(int sig) {
     if (sig == SIGINT) {
-        printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
-        // TODO
+        printf("msh> "); 
     } else if (sig == SIGQUIT) {
-        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.
-        // TODO
+         printf("msh> "); 
     }
 }
 
 void cd(char *path) {
     char resolved_path[1024];
 
-    if (path == NULL || strcmp(path, "~") == 0) { 
+    if (path == NULL) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
     } else if (path[0] == '~') { 
         // Cuando la dirección es "~/*"
@@ -117,7 +108,7 @@ void execute_command(tcommand *comando, int fd_in, int fd_out) {
         close(fd_out);
     }
     execvp(comando->argv[0], comando->argv); // Buscar en el PATH
-    fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comando->argv[0], strerror(errno));
+    fprintf(stderr, comando, ": No se encuentra el mandato\n" , comando->argv[0], strerror(errno));    
 }
 
 void execute_piped_commands(tline *line) {
@@ -147,40 +138,40 @@ void execute_piped_commands(tline *line) {
         }
 
         if (pid == 0) { // Proceso hijo
-            if (fd_in != 0) {
-                dup2(fd_in, 0); 
+            if (fd_in != 0) { // No es el primer comando
+                dup2(fd_in, 0); // Redirigir la entrada estándar al pipe de lectura
                 close(fd_in);
             }else{
                 if (line->redirect_input != NULL){
                     int fd_in = open(line->redirect_input, O_RDONLY);
                     if (fd_in == -1) {
-                        perror("open");
+                        perror(line->redirect_input, "Error.", strerror(errno));
                         continue;
                     }
-                    dup2(fd_in, STDIN_FILENO);
+                    dup2(fd_in, STDIN_FILENO); // Redirigir la entrada estándar al archivo
                     close(fd_in);
                     }
             }
-            if (i < line->ncommands - 1) {
+            if (i < line->ncommands - 1) { // No es el último comando
                 dup2(pipefd[1], 1);
                 close(pipefd[1]);
             } else {
                 if (line->redirect_output != NULL) {
                     fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                     if (fd_out == -1) {
-                        perror("open");
+                        perror(line->redirect_output, "Error.", strerror(errno));
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd_out, STDOUT_FILENO);
+                    dup2(fd_out, STDOUT_FILENO); // Redirigir la salida estándar al archivo
                     close(fd_out);
                 }
-                if (line->redirect_error != NULL) {
+                if (line->redirect_error != NULL) { 
                     int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if (fd_err == -1) {
-                        perror("open");
+                    if (fd_err == -1) { 
+                        perror(line->redirect_error, "Error.", strerror(errno));
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd_err, STDERR_FILENO);
+                    dup2(fd_err, STDERR_FILENO); // Redirigir la salida de error estándar al archivo
                     close(fd_err);
                 }
             }
@@ -207,7 +198,8 @@ void display_prompt() {
         user = "Anonymous";
     }
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
+        printf("msh> ")
+        //printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
     } else {
         perror("getcwd");
         exit(EXIT_FAILURE);
