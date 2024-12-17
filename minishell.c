@@ -9,24 +9,20 @@
 #include "parser.h"
 #include <fcntl.h>
 
-
-
 # define MAX_INPUT 1024
 
 void handle_signal(int sig) {
     if (sig == SIGINT) {
-        printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
-        // TODO
+        printf("msh> "); 
     } else if (sig == SIGQUIT) {
-        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.
-        // TODO
+        printf("msh> "); 
     }
 }
 
 void cd(char *path) {
     char resolved_path[1024];
 
-    if (path == NULL || strcmp(path, "~") == 0) { 
+    if (path == NULL) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
     } else if (path[0] == '~') { 
         // Cuando la dirección es "~/*"
@@ -59,13 +55,11 @@ void execute_piped_commands(tline *line) {
     int pipefd[2];
     int fd_in = 0;
     int fd_out = 1;
-
     for (i = 0; i < line->ncommands; i++) {
         if (pipe(pipefd) == -1) {
             perror("pipe");
             exit(EXIT_FAILURE);
         }
-
         // Ningún built-in tiene que hacer fork
         // Como un hijo no puede cambiar el directorio de trabajo de un padre, se maneja el comando `cd` aquí
         if (strcmp(line->commands[i].argv[0], "cd") == 0) {
@@ -74,12 +68,10 @@ void execute_piped_commands(tline *line) {
             close(pipefd[1]);
             continue;
         }
-
         pid_t pid = fork();
         if (pid == -1) {
             perror("fork");
         }
-
         if (pid == 0) { // Proceso hijo
             if (fd_in != 0) { //No es el primer comando
                 dup2(fd_in, 0); // Redirigir la entrada estándar al pipe de lectura
@@ -88,7 +80,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_input != NULL){
                     int fd_in = open(line->redirect_input, O_RDONLY);
                     if (fd_in == -1) {
-                        perror(line->redirect_input, "Error.", strerror(errno));
+                        perror(line->redirect_input, "Error.", strerror(errno)));
                         continue;
                     }
                     dup2(fd_in, STDIN_FILENO); // Redirigir la entrada estándar desde el archivo
@@ -102,7 +94,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_output != NULL) {
                     fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644); // Redirigir la salida estándar al archivo
                     if (fd_out == -1) {
-                        perror("open");
+                        perror(line->redirect_output, "Error.", strerror(errno));
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd_out, STDOUT_FILENO);
@@ -111,7 +103,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_error != NULL) {
                     int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644); // Redirigir la salida de error al archivo
                     if (fd_err == -1) {
-                        perror("open");
+                        perror(line->redirect_error, "Error.", strerror(errno));
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd_err, STDERR_FILENO);
