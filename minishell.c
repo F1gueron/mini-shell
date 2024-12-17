@@ -145,7 +145,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_input != NULL){
                     int fd_in = open(line->redirect_input, O_RDONLY);
                     if (fd_in == -1) {
-                        perror(line->redirect_input, "Error.", strerror(errno));
+                        fprintf(stderr, "%s Error.%s\n", line->redirect_input, strerror(errno));
                         continue;
                     }
                     dup2(fd_in, STDIN_FILENO); // Redirigir la entrada estándar al archivo
@@ -159,7 +159,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_output != NULL) {
                     fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                     if (fd_out == -1) {
-                        perror(line->redirect_output, "Error.", strerror(errno));
+                        fprintf(stderr, "%s Error.%s\n", line->redirect_output, strerror(errno));
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd_out, STDOUT_FILENO); // Redirigir la salida estándar al archivo
@@ -168,7 +168,7 @@ void execute_piped_commands(tline *line) {
                 if (line->redirect_error != NULL) { 
                     int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                     if (fd_err == -1) { 
-                        perror(line->redirect_error, "Error.", strerror(errno));
+                        fprintf(stderr, "%s Error.%s\n", line->redirect_error, strerror(errno));
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd_err, STDERR_FILENO); // Redirigir la salida de error estándar al archivo
