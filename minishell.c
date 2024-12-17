@@ -198,7 +198,7 @@ void display_prompt() {
         user = "Anonymous";
     }
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf("msh> ")
+        printf("msh> ");
         //printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
     } else {
         perror("getcwd");
@@ -232,13 +232,13 @@ int main() {
 
         if (strcmp(input, "quit\n") == 0 || strcmp(input, "exit\n") == 0 ||
             strcmp(input, "quit()\n") == 0 || strcmp(input, "exit()\n") == 0) {
-            printf(GREEN "Exiting shell. Goodbye!\n" RESET );
+            printf("Exiting shell. Goodbye!\n");
             return 0;
         }
 
         line = tokenize(input); // Tokenizar la entrada usando librería del profe
         if (line == NULL) {
-            fprintf(stderr, RED "Error: no se pudo procesar el comando.\n" RESET);
+            fprintf(stderr,"Error: no se pudo procesar el comando.\n");
             continue;
         }
         
