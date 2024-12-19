@@ -8,50 +8,49 @@
 #include <errno.h>
 #include "parser.h"
 #include <fcntl.h>
+#define MAX_BG_PROCESS 1024 //Número máximo de procesos que vamos a poder ejecutar en segundo plano a la vez
+
+
+
 
 # define MAX_INPUT 1024
 
+#define RESET      "\033[0m"
+#define RED        "\033[31m"
+#define GREEN      "\033[32m"
+#define YELLOW     "\033[33m"
+#define BLUE       "\033[34m"
 
-typedef struct process {
-    pid_t pid;          // ID del proceso
-    char *command;      // Comando ejecutado
-    struct bg_process *next; // Siguiente proceso en la lista
-} process;
 
-process *fg_list = NULL; // Inicializa lista de procesos en primer plano
 
-process *bg_list = NULL; // Inicializa lista de procesos en segundo plano
+pid_t bg_pids[MAX_BG_PROCESS];//Array de pids
+int contador = 0;//inicializamos variable contador que contará los procesos corriendo en background
 
-void addFgProcess(process *lista, pid_t pid, const char *comando){
-    process *nuevo=malloc(1*sizeof(process));
-    if (!nuevo) {
-        perror("Error al asignar memoria");
-        return;
+
+void addBgProcessArray(pid_t pid) {
+    if (contador < MAX_BG_PROCESS) {
+        bg_pids[contador++] = pid;
+    } else {
+        fprintf(stderr, "Error: no se pueden agregar más procesos en background (límite alcanzado).\n");
     }
-    nuevo->pid = pid;
-    nuevo->command = strdup(comando);
-    nuevo->next = lista;
-    *lista = *nuevo;
 }
 
-void eliminar_process(process **lista, pid_t pid) {
-    process *actual = *lista, *anterior = NULL;
-
-    while (actual != NULL) {
-        if (actual->pid == pid) {
-            if (anterior == NULL) {
-                *lista = actual->next;
-            } else {
-                anterior->next = actual->next;
+void removeBgProcessArray(pid_t pid) {
+    for (int i = 0; i < contador; i++) {
+        if (bg_pids[i] == pid) {
+            // Mueve los elementos restantes hacia adelante
+            for (int j = i; j < contador - 1; j++) {
+                bg_pids[j] = bg_pids[j + 1];
             }
-            free(actual->command);
-            free(actual);
+            contador--;
             return;
         }
-        anterior = actual;
-        actual = actual->next;
     }
+    fprintf(stderr, "Error: PID %d no encontrado en los procesos en background.\n", pid);
 }
+
+
+
 void execute_background(const char *command, char **args) {
     pid_t pid = fork();
 
@@ -60,30 +59,50 @@ void execute_background(const char *command, char **args) {
         return;
     } else if (pid == 0) {
         // Proceso hijo
+        signal(SIGINT, SIG_IGN);  // Ignorar SIGINT (Ctrl+C)
+        signal(SIGQUIT, SIG_IGN); // Ignorar SIGQUIT (Ctrl+\)
+        
         if (execvp(args[0], args) == -1) {
             perror("Error al ejecutar el comando");
             exit(EXIT_FAILURE);
         }
     } else {
-        // Proceso padre: Agregar el proceso a la lista
+        // Proceso padre
         printf("Ejecutando en background: %s (PID: %d)\n", command, pid);
-        addBgProcess(&bg_list, pid, command);
+        addBgProcessArray(pid);
     }
 }
 
+void jobs() {
+    printf("Procesos en background:\n");
+    for (int i = 0; i < contador; i++) {
+        // Verificar si el proceso sigue activo
+        if (kill(bg_pids[i], 0) == 0) {
+            printf("[%d] PID: %d - En ejecución\n", i + 1, bg_pids[i]);
+        } else {
+            printf("[%d] PID: %d - Finalizado o inaccesible\n", i + 1, bg_pids[i]);
+        }
+    }
+
+    if (contador == 0) {
+        printf("No hay procesos en background.\n");
+    }
+}
 
 void handle_signal(int sig) {
     if (sig == SIGINT) {
-        printf("msh> "); 
+        printf("\n" YELLOW "SIGINT received.\n" RESET); // TODO: Implement handling for process in foreground
+        // TODO
     } else if (sig == SIGQUIT) {
-         printf("msh> "); 
+        printf("\n" YELLOW "SIGQUIT received.\n" RESET); // TODO: Implement handling for process in foreground.
+        // TODO
     }
 }
 
 void cd(char *path) {
     char resolved_path[1024];
 
-    if (path == NULL) { 
+    if (path == NULL || strcmp(path, "~") == 0) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
     } else if (path[0] == '~') { 
         // Cuando la dirección es "~/*"
@@ -108,7 +127,7 @@ void execute_command(tcommand *comando, int fd_in, int fd_out) {
         close(fd_out);
     }
     execvp(comando->argv[0], comando->argv); // Buscar en el PATH
-    fprintf(stderr, comando, ": No se encuentra el mandato\n" , comando->argv[0], strerror(errno));    
+    fprintf(stderr, RED "Error: No se pudo ejecutar '%s': %s\n" RESET, comando->argv[0], strerror(errno));
 }
 
 void execute_piped_commands(tline *line) {
@@ -124,54 +143,59 @@ void execute_piped_commands(tline *line) {
         }
 
         // Ningún built-in tiene que hacer fork
-        // Como un hijo no puede cambiar el directorio de trabajo de un padre, se maneja el comando `cd` aquí
+        // Como un hijo no puede cambiar el directorio de trabajo de un padre, se maneja el comando cd aquí
         if (strcmp(line->commands[i].argv[0], "cd") == 0) {
             cd(line->commands[i].argv[1]);
             close(pipefd[0]);
             close(pipefd[1]);
             continue;
         }
-
+        if (strcmp(line->commands[i].argv[0], "jobs") == 0) {
+            jobs(line->commands[i].argv[1]);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            continue;
+        }
         pid_t pid = fork();
         if (pid == -1) {
             perror("fork");
         }
 
         if (pid == 0) { // Proceso hijo
-            if (fd_in != 0) { // No es el primer comando
-                dup2(fd_in, 0); // Redirigir la entrada estándar al pipe de lectura
+            if (fd_in != 0) {
+                dup2(fd_in, 0); 
                 close(fd_in);
             }else{
                 if (line->redirect_input != NULL){
                     int fd_in = open(line->redirect_input, O_RDONLY);
                     if (fd_in == -1) {
-                        fprintf(stderr, "%s Error.%s\n", line->redirect_input, strerror(errno));
+                        perror("open");
                         continue;
                     }
-                    dup2(fd_in, STDIN_FILENO); // Redirigir la entrada estándar al archivo
+                    dup2(fd_in, STDIN_FILENO);
                     close(fd_in);
                     }
             }
-            if (i < line->ncommands - 1) { // No es el último comando
+            if (i < line->ncommands - 1) {
                 dup2(pipefd[1], 1);
                 close(pipefd[1]);
             } else {
                 if (line->redirect_output != NULL) {
                     fd_out = open(line->redirect_output, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                     if (fd_out == -1) {
-                        fprintf(stderr, "%s Error.%s\n", line->redirect_output, strerror(errno));
+                        perror("open");
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd_out, STDOUT_FILENO); // Redirigir la salida estándar al archivo
+                    dup2(fd_out, STDOUT_FILENO);
                     close(fd_out);
                 }
-                if (line->redirect_error != NULL) { 
+                if (line->redirect_error != NULL) {
                     int fd_err = open(line->redirect_error, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if (fd_err == -1) { 
-                        fprintf(stderr, "%s Error.%s\n", line->redirect_error, strerror(errno));
+                    if (fd_err == -1) {
+                        perror("open");
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd_err, STDERR_FILENO); // Redirigir la salida de error estándar al archivo
+                    dup2(fd_err, STDERR_FILENO);
                     close(fd_err);
                 }
             }
@@ -198,8 +222,7 @@ void display_prompt() {
         user = "Anonymous";
     }
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
-        printf("msh> ");
-        //printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
+        printf(BLUE "%s" GREEN "@" BLUE "msh" GREEN ":" BLUE "%s" GREEN "$> ", user, cwd);
     } else {
         perror("getcwd");
         exit(EXIT_FAILURE);
@@ -214,7 +237,7 @@ void manejador_sigchld(int sig) {
     // Limpiar todos los procesos terminados
     while ((pid = waitpid(-1, &estado, WNOHANG)) > 0) {
         printf("Proceso en background (PID: %d) terminado.\n", pid);
-        eliminar_proceso(&bg_list, pid);
+        removeBgProcessArray(pid);
     }
 }
 
@@ -232,13 +255,13 @@ int main() {
 
         if (strcmp(input, "quit\n") == 0 || strcmp(input, "exit\n") == 0 ||
             strcmp(input, "quit()\n") == 0 || strcmp(input, "exit()\n") == 0) {
-            printf("Exiting shell. Goodbye!\n");
+            printf(GREEN "Exiting shell. Goodbye!\n" RESET );
             return 0;
         }
 
         line = tokenize(input); // Tokenizar la entrada usando librería del profe
         if (line == NULL) {
-            fprintf(stderr,"Error: no se pudo procesar el comando.\n");
+            fprintf(stderr, RED "Error: no se pudo procesar el comando.\n" RESET);
             continue;
         }
         
