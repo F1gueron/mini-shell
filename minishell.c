@@ -115,17 +115,26 @@ void jobs() {
         printf("No hay procesos en background.\n");
     }
 }
-void devolverAFg(pid_t pid){
-    for(int i=0; i<MAX_BG_PROCESS; i++){
-        if(bg_pids[i].pid=pid){
-            waitpid(bg_pids[i].pid, NULL, 0);
-            removeBgProcessStruct(bg_pids[i].pid);
-            break;
+void devolverAFg(int jobid){
+    if(jobid==-1){
+        if(contador>0){
+            waitpid(bg_pids[contador-1].pid, NULL, 0);
+            removeBgProcessStruct(bg_pids[contador-1].pid);
+        }
+        else{
+            printf("No hay procesos en background.\n");
         }
     }
-
+    else{
+        if(contador>=jobid){
+            waitpid(bg_pids[jobid-1].pid, NULL, 0);
+            removeBgProcessStruct(bg_pids[jobid-1].pid);
+        }
+        else{
+            printf("No esta el proceso en background\n");
+        }
+    }
 }
-
 
 void handle_signal(int sig) {
     if (sig == SIGINT) {
@@ -188,6 +197,16 @@ void execute_piped_commands(tline *line) {
         }
         if (strcmp(line->commands[i].argv[0], "jobs") == 0) {
             jobs();
+            close(pipefd[0]);
+            close(pipefd[1]);
+            return;
+        }
+        if (strcmp(line->commands[i].argv[0], "fg") == 0) {
+            int job_id = -1;
+            if (line->commands[0].argc > 1) {
+                job_id = atoi(line->commands[0].argv[1]);
+            }
+            devolverAFg(job_id);            
             close(pipefd[0]);
             close(pipefd[1]);
             return;
