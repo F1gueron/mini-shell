@@ -13,10 +13,20 @@
 
 # define MAX_INPUT 1024
 
-pid_t bg_pids[MAX_BG_PROCESS];//Array de pids
-int contador = 0;//inicializamos variable contador que contará los procesos corriendo en background
+pid_t bg_pids[MAX_BG_PROCESS]; //Array de pids
+int contador = 0; //inicializamos variable contador que contará los procesos corriendo en background
+
 
 void addBgProcessArray(pid_t pid) {
+    if (contador < MAX_BG_PROCESS) {
+        bg_pids[contador++] = pid;
+    } else {
+        fprintf(stderr, "Error: no se pueden agregar más procesos en background (límite alcanzado).\n");
+    }
+}
+
+
+void removeBgProcessArray(pid_t pid) {
     if (contador < MAX_BG_PROCESS) {
         bg_pids[contador++] = pid;
     } else {
@@ -85,7 +95,6 @@ void handle_signal(int sig) {
 
 void cd(char *path) {
     char resolved_path[1024];
-
     if (path == NULL) { 
         path = getenv("HOME"); // Ir al directorio HOME si no se proporciona un argumento o es "~"
     } else if (path[0] == '~') { 
@@ -122,14 +131,10 @@ void execute_piped_commands(tline *line) {
     int fd_out = 1;
 
     for (i = 0; i < line->ncommands; i++) {
-        if (line->commands[i].filename == NULL) {
-            fprintf(stderr,"%s: No se encuentra el mandato\n", line->commands[i].argv[0]);
-            break;
-        }
         if (pipe(pipefd) == -1) {
             perror("pipe");
             exit(EXIT_FAILURE);
-        }
+        }   
 
         // Ningún built-in tiene que hacer fork
         // Como un hijo no puede cambiar el directorio de trabajo de un padre, se maneja el comando `cd` aquí
@@ -144,6 +149,11 @@ void execute_piped_commands(tline *line) {
             close(pipefd[0]);
             close(pipefd[1]);
             continue;
+        }
+
+        if (line->commands[i].filename == NULL) {
+            fprintf(stderr,"%s: No se encuentra el mandato\n", line->commands[i].argv[0]);
+            break;
         }
 
         pid_t pid = fork();
@@ -250,6 +260,7 @@ int main() {
         
         // Ejecutar el primer comando en foreground o background
         if (line->background) {
+            printf("Ejecutando en background: %s\n", line->commands[0].argv[0]);
             // Ejecutar en background
             execute_background(line->commands[0].argv[0], line->commands[0].argv);
         } else {
