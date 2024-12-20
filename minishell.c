@@ -61,13 +61,9 @@ void removeBgProcessStruct(pid_t pid) {
             break;
         }
     }
-
-    if (!found) {
-        fprintf(stderr, "Error: Proceso con PID %d no encontrado.\n", pid);
-    }
 }
 
-void execute_background(const char *command, char **args) {
+void execute_background(const char *command, char **args, char * input) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -84,8 +80,7 @@ void execute_background(const char *command, char **args) {
         }
     } else {
         // Proceso padre
-        printf("Ejecutando en background: %s (PID: %d)\n", command, pid);
-        addBgProcessArray(pid, command);
+        addBgProcessArray(pid, input);
     }
 }
 
@@ -107,7 +102,7 @@ void jobs() {
     for (int i = 0; i < contador; i++) {
         // Verificar si el proceso sigue activo
         if (kill(bg_pids[i].pid, 0) == 0) {
-            printf("[%d] Running: %d, Command=%s - En ejecución\n", i + 1, bg_pids[i].pid, bg_pids[i].command);
+            printf("[%d] Running: \t%s \n", i + 1, bg_pids[i].command);
         }
     }
 
@@ -193,7 +188,7 @@ void execute_piped_commands(tline *line) {
             cd(line->commands[i].argv[1]);
             close(pipefd[0]);
             close(pipefd[1]);
-            return;
+            continue;
         }
         if (strcmp(line->commands[i].argv[0], "jobs") == 0) {
             jobs();
@@ -214,7 +209,7 @@ void execute_piped_commands(tline *line) {
 
         if (line->commands[i].filename == NULL) {
             fprintf(stderr,"%s: No se encuentra el mandato\n", line->commands[i].argv[0]);
-            break;
+            return;
         }
 
         pid_t pid = fork();
@@ -300,6 +295,7 @@ int main() {
     tline *line;
     signal(SIGINT, SIG_IGN);
     signal(SIGQUIT, SIG_IGN);
+    signal(SIGCHLD, manejador_sigchld);
 
     while (1) {
         display_prompt();
@@ -321,9 +317,7 @@ int main() {
         
         // Ejecutar el primer comando en foreground o background
         if (line->background) {
-            printf("Ejecutando en background: %s\n", line->commands[0].argv[0]);
-            // Ejecutar en background
-            execute_background(line->commands[0].argv[0], line->commands[0].argv);
+            execute_background(line->commands[0].argv[0], line->commands[0].argv, input);
         } else {
             execute_piped_commands(line);
         }
